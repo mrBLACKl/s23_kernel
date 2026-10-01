@@ -1,6 +1,6 @@
 name: Build Samsung S23 (SM-S911B) Kernel
 
-on:
+'on':
   workflow_dispatch:
     inputs:
       variant:
@@ -134,21 +134,7 @@ jobs:
           mkdir -p "${BUILD_TOOLS_PATH}"
 
           # Create bullet-proof non-recursive toybox dispatcher script
-          cat << 'EOF' > "${PREBUILTS_DIR}/build-tools/linux-x86/bin/toybox"
-#!/bin/bash
-CMD="$(basename "$0")"
-if [ "$CMD" = "toybox" ]; then
-  CMD="$1"
-  shift
-fi
-for p in /usr/bin /bin /usr/local/bin; do
-  if [ -x "$p/$CMD" ] && [ "$p/$CMD" != "$0" ]; then
-    exec "$p/$CMD" "$@"
-  fi
-done
-echo "Host binary for $CMD not found" >&2
-exit 1
-EOF
+          printf '#!/bin/bash\nCMD="$(basename "$0")"\nif [ "$CMD" = "toybox" ]; then\n  CMD="$1"\n  shift\nfi\nfor p in /usr/bin /bin /usr/local/bin; do\n  if [ -x "$p/$CMD" ] && [ "$p/$CMD" != "$0" ]; then\n    exec "$p/$CMD" "$@"\n  fi\ndone\necho "Host binary for $CMD not found" >&2\nexit 1\n' > "${PREBUILTS_DIR}/build-tools/linux-x86/bin/toybox"
           chmod +x "${PREBUILTS_DIR}/build-tools/linux-x86/bin/toybox"
 
           # Populate both prebuilts and build/kernel/build-tools/path/linux-x86 with direct host binaries
@@ -198,10 +184,10 @@ EOF
           echo "Using kernel: ${KERNEL_IMG}"
           cp "${KERNEL_IMG}" "${OUTPUT_DIR}/Image"
 
-          # Determine security patch level
+          # Determine security patch level (defaults to 2099-12 bypass unless explicitly disabled)
           SPL="2026-09"
           SPL_FULL="2026-09-05"
-          if [ "${{ github.event.inputs.spl_bypass }}" = "true" ]; then
+          if [ "${{ github.event.inputs.spl_bypass }}" != "false" ]; then
             SPL="2099-12"
             SPL_FULL="2099-12-05"
           fi

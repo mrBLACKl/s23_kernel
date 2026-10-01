@@ -16,7 +16,7 @@ def safe_symlink(src, dst):
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         os.symlink(src, dst)
     except Exception as e:
-        pass
+        log(f"Warning: could not symlink {src} -> {dst}: {e}")
 
 def write_executable(path, content):
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -75,7 +75,7 @@ exit 1
     # Link mkdtboimg and mkdtimg
     for tool_name in ("mkdtboimg.py", "mkdtboimg", "mkdtimg"):
         safe_symlink(mkdtboimg_path, os.path.join(k_tools, tool_name))
-        safe_symlink(mkdtboimg_path, os.path.join(p_path, tool_name))
+        safe_symlink(mkdtboimg_path, os.path.join(b_bin, tool_name))
 
     # 3. Setup avbtool
     avbtool_path = os.path.join(root, "kernel_platform/external/avb/avbtool.py")
@@ -92,7 +92,7 @@ exit 1
 
     for tool_name in ("avbtool", "avbtool.py"):
         safe_symlink(avbtool_path, os.path.join(k_tools, tool_name))
-        safe_symlink(avbtool_path, os.path.join(p_path, tool_name))
+        safe_symlink(avbtool_path, os.path.join(b_bin, tool_name))
 
     # 4. Setup ufdt_apply_overlay (uses host fdtoverlay)
     ufdt_script = """#!/bin/bash
@@ -102,7 +102,6 @@ fi
 exit 0
 """
     write_executable(os.path.join(k_tools, "ufdt_apply_overlay"), ufdt_script)
-    safe_symlink(os.path.join(k_tools, "ufdt_apply_overlay"), os.path.join(p_path, "ufdt_apply_overlay"))
 
     # 5. Setup soong_zip handler
     soong_script = """#!/bin/bash
@@ -117,9 +116,19 @@ done
 exit 0
 """
     write_executable(os.path.join(k_tools, "soong_zip"), soong_script)
-    safe_symlink(os.path.join(k_tools, "soong_zip"), os.path.join(p_path, "soong_zip"))
 
-    # 6. Setup safe stubs for platform/certification/ABI tools
+    # 6. Pahole linking
+    host_pahole = shutil.which("pahole")
+    if host_pahole:
+        safe_symlink(host_pahole, os.path.join(k_tools, "pahole"))
+        safe_symlink(host_pahole, os.path.join(b_bin, "pahole"))
+    else:
+        # Check standard path
+        if os.path.exists("/usr/bin/pahole"):
+            safe_symlink("/usr/bin/pahole", os.path.join(k_tools, "pahole"))
+            safe_symlink("/usr/bin/pahole", os.path.join(b_bin, "pahole"))
+
+    # 7. Setup safe stubs for platform/certification/ABI tools
     stubs = (
         "certify_bootimg", "build_image", "build_super_image", "lpmake",
         "abidiff", "abidw", "abitidy", "stgdiff", "interceptor", "interceptor_analysis",
@@ -128,19 +137,6 @@ exit 0
     for s in stubs:
         stub_path = os.path.join(k_tools, s)
         write_executable(stub_path, "#!/bin/bash\nexit 0\n")
-        safe_symlink(stub_path, os.path.join(p_path, s))
-
-    # 7. Pahole linking
-    host_pahole = shutil.which("pahole")
-    if host_pahole:
-        safe_symlink(host_pahole, os.path.join(k_tools, "pahole"))
-        safe_symlink(host_pahole, os.path.join(p_path, "pahole"))
-        safe_symlink(host_pahole, os.path.join(b_bin, "pahole"))
-    else:
-        stub_pahole = os.path.join(k_tools, "pahole")
-        write_executable(stub_pahole, "#!/bin/bash\nexit 0\n")
-        safe_symlink(stub_pahole, os.path.join(p_path, "pahole"))
-        safe_symlink(stub_pahole, os.path.join(b_bin, "pahole"))
 
     # 8. Scan and link all common host tools into prebuilt dirs
     common_tools = [
@@ -162,17 +158,16 @@ exit 0
         if which:
             safe_symlink(which, os.path.join(b_path, t))
             safe_symlink(which, os.path.join(b_bin, t))
-            safe_symlink(which, os.path.join(p_path, t))
             safe_symlink(which, os.path.join(k_tools, t))
 
     # 9. Final sweep: iterate over every symlink in p_path and b_path
-    # If any link is broken, resolve it via host binary or safe stub!
+    # If any link target does not exist, write the host binary or safe stub directly at the target!
     total_swept = 0
     total_broken_fixed = 0
     for scan_dir in (p_path, b_path):
         if not os.path.exists(scan_dir):
             continue
-        for name in os.listdir(scan_dir):
+        for name in sorted(os.listdir(scan_dir)):
             p = os.path.join(scan_dir, name)
             total_swept += 1
             if os.path.islink(p) and not os.path.exists(p):
@@ -180,19 +175,11 @@ exit 0
                 abs_target = os.path.normpath(os.path.join(scan_dir, raw_target))
                 which = shutil.which(name)
                 if which:
-                    if abs_target.startswith(root):
-                        safe_symlink(which, abs_target)
-                    else:
-                        safe_symlink(which, p)
-                    log(f"Sweep fixed host binary: {name} -> {which}")
+                    safe_symlink(which, abs_target)
+                    log(f"Sweep fixed host binary: {name} -> {which} at {abs_target}")
                 else:
-                    stub = os.path.join(k_tools, name)
-                    write_executable(stub, "#!/bin/bash\nexit 0\n")
-                    if abs_target.startswith(root):
-                        safe_symlink(stub, abs_target)
-                    else:
-                        safe_symlink(stub, p)
-                    log(f"Sweep fixed stub: {name}")
+                    write_executable(abs_target, "#!/bin/bash\nexit 0\n")
+                    log(f"Sweep fixed stub: {name} at {abs_target}")
                 total_broken_fixed += 1
 
     # 10. Audit validation
@@ -203,6 +190,10 @@ exit 0
     log(f"Swept {total_swept} links. Fixed {total_broken_fixed} dangling links.")
     if broken_remaining:
         log(f"CRITICAL ERROR: {len(broken_remaining)} broken links remain: {broken_remaining}")
+        for b in broken_remaining:
+            link = os.path.join(p_path, b)
+            target = os.path.normpath(os.path.join(p_path, os.readlink(link)))
+            log(f"  {b} -> {target} (exists={os.path.exists(target)}, islink={os.path.islink(target)})")
         sys.exit(1)
     else:
         log("PERFECT AUDIT: 0 broken links remain in BUILD_TOOLS_PATH. All tools ready!")

@@ -133,15 +133,7 @@ jobs:
           mkdir -p "${PREBUILTS_DIR}/build-tools/path/linux-x86"
 
           # Create universal toybox wrapper script
-          cat << 'EOF' > "${PREBUILTS_DIR}/build-tools/linux-x86/bin/toybox"
-#!/bin/bash
-CMD="$(basename "$0")"
-if [ "$CMD" = "toybox" ]; then
-  CMD="$1"
-  shift
-fi
-exec "$CMD" "$@"
-EOF
+          printf '#!/bin/bash\nCMD="$(basename "$0")"\nif [ "$CMD" = "toybox" ]; then\n  CMD="$1"\n  shift\nfi\nexec "$CMD" "$@"\n' > "${PREBUILTS_DIR}/build-tools/linux-x86/bin/toybox"
           chmod +x "${PREBUILTS_DIR}/build-tools/linux-x86/bin/toybox"
 
           # Populate build-tools with all host utilities

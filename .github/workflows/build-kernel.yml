@@ -126,12 +126,26 @@ jobs:
         run: |
           PREBUILTS_DIR="${GITHUB_WORKSPACE}/kernel_platform/prebuilts"
           
-          # Setup build-tools if missing
           mkdir -p "${PREBUILTS_DIR}/build-tools/linux-x86/bin"
-          for tool in bison flex m4 make ninja dtc; do
-            if [ ! -e "${PREBUILTS_DIR}/build-tools/linux-x86/bin/${tool}" ]; then
-              ln -sf "$(which ${tool} || echo /bin/true)" "${PREBUILTS_DIR}/build-tools/linux-x86/bin/${tool}"
-            fi
+          mkdir -p "${PREBUILTS_DIR}/build-tools/path/linux-x86"
+
+          # Create universal toybox wrapper script
+          cat << 'EOF' > "${PREBUILTS_DIR}/build-tools/linux-x86/bin/toybox"
+#!/bin/bash
+CMD="$(basename "$0")"
+if [ "$CMD" = "toybox" ]; then
+  CMD="$1"
+  shift
+fi
+exec "$CMD" "$@"
+EOF
+          chmod +x "${PREBUILTS_DIR}/build-tools/linux-x86/bin/toybox"
+
+          # Populate build-tools with all host utilities
+          for tool in nproc readlink sed tr grep awk find xargs basename dirname cp mv rm mkdir rmdir cat head tail wc sort uniq cut tee touch chmod chown date expr sleep uname which id whoami stat md5sum sha1sum sha256sum tar gzip bzip2 xz lz4 mktemp bc bison flex m4 make ninja dtc openssl python python3; do
+            which_tool=$(which "${tool}" 2>/dev/null || echo /bin/true)
+            ln -sf "${which_tool}" "${PREBUILTS_DIR}/build-tools/path/linux-x86/${tool}"
+            ln -sf "${which_tool}" "${PREBUILTS_DIR}/build-tools/linux-x86/bin/${tool}"
           done
 
           # Setup kernel-build-tools if missing
@@ -157,6 +171,8 @@ jobs:
           # Convert any Windows CRLF to Unix LF on all scripts
           find . -type f -name "*.sh" -exec sed -i 's/\r$//' {} + 2>/dev/null || true
           chmod +x ./build_kernel_GKI.sh
+
+          export HERMETIC_TOOLCHAIN=0
 
           # Setup ccache for compilation caching
           export CCACHE_DIR="${HOME}/.ccache"

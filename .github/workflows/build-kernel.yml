@@ -46,6 +46,7 @@ jobs:
             build-essential \
             ccache \
             curl \
+            dwarves \
             flex \
             git \
             gnupg \
@@ -138,7 +139,7 @@ jobs:
           chmod +x "${PREBUILTS_DIR}/build-tools/linux-x86/bin/toybox"
 
           # Populate both prebuilts and build/kernel/build-tools/path/linux-x86 with direct host binaries
-          for tool in nproc readlink sed tr grep awk find xargs basename dirname cp mv rm mkdir rmdir cat head tail wc sort uniq cut tee touch chmod chown date expr sleep uname which id whoami stat md5sum sha1sum sha256sum tar gzip bzip2 xz lz4 mktemp bc bison flex m4 make ninja dtc openssl python python3 cpio dd diff realpath; do
+          for tool in nproc readlink sed tr grep awk find xargs basename dirname cp mv rm mkdir rmdir cat head tail wc sort uniq cut tee touch chmod chown date expr sleep uname which id whoami stat md5sum sha1sum sha256sum tar gzip bzip2 xz lz4 mktemp bc bison flex m4 make ninja dtc openssl python python3 cpio dd diff realpath pahole; do
             which_tool=$(which "${tool}" 2>/dev/null || echo "/usr/bin/${tool}")
             ln -sf "${which_tool}" "${PREBUILTS_DIR}/build-tools/path/linux-x86/${tool}"
             ln -sf "${which_tool}" "${PREBUILTS_DIR}/build-tools/linux-x86/bin/${tool}"
@@ -152,6 +153,9 @@ jobs:
             ln -sf "${AVBTOOL_LOCAL}" "${PREBUILTS_DIR}/kernel-build-tools/linux-x86/bin/avbtool"
             ln -sf "${AVBTOOL_LOCAL}" "${BUILD_TOOLS_PATH}/avbtool"
           fi
+          which_pahole=$(which pahole 2>/dev/null || echo "/usr/bin/pahole")
+          ln -sf "${which_pahole}" "${PREBUILTS_DIR}/kernel-build-tools/linux-x86/bin/pahole"
+          ln -sf "${which_pahole}" "${BUILD_TOOLS_PATH}/pahole"
 
       - name: Build Kernel
         run: |
@@ -167,6 +171,9 @@ jobs:
           nproc
           which nproc
           ${GITHUB_WORKSPACE}/kernel_platform/build/kernel/build-tools/path/linux-x86/nproc
+          echo "==> Verifying pahole (BTF generator):"
+          pahole --version || true
+          ${BUILD_TOOLS_PATH}/pahole --version || true
 
           # Run build for Samsung Galaxy S23 (dm1q_eur_openx)
           bash ./build_kernel_GKI.sh dm1q_eur_openx ${{ github.event.inputs.variant || 'user' }} kalama

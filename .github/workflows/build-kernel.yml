@@ -16,10 +16,14 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
-    name: Build Kernel & Package Boot
-    runs-on: ubuntu-22.04
+    name: Build Kernel & Package Boot (High Perf)
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout Kernel Source
@@ -30,36 +34,31 @@ jobs:
 
       - name: Free Disk Space
         run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
           df -h
 
       - name: Install Build Dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
             bc \
             bison \
             build-essential \
             ccache \
             curl \
             flex \
-            g++-multilib \
-            gcc-multilib \
             git \
             gnupg \
-            gperf \
             libelf-dev \
             libssl-dev \
             lz4 \
-            liblz4-tool \
             python3 \
             python-is-python3 \
             rsync \
             device-tree-compiler \
             zip \
-            zlib1g-dev
+            zlib1g-dev \
+            libncurses-dev
 
       - name: Setup Java 11
         uses: actions/setup-java@v4
@@ -163,21 +162,25 @@ jobs:
 
       - name: Build Kernel
         run: |
-          # Convert any Windows CRLF to Unix LF on all scripts
-          find . -type f -name "*.sh" -exec sed -i 's/\r$//' {} + 2>/dev/null || true
+          # Convert any Windows CRLF to Unix LF without modifying symlinks
+          find . -type f ! -type l -name "*.sh" -exec sed -i 's/\r$//' {} + 2>/dev/null || true
           chmod +x ./build_kernel_GKI.sh
 
           export HERMETIC_TOOLCHAIN=0
+          export MAKEFLAGS="-j$(nproc)"
 
           # Setup ccache for compilation caching
           export CCACHE_DIR="${HOME}/.ccache"
-          export CCACHE_MAXSIZE="10G"
+          export CCACHE_MAXSIZE="15G"
+          export CCACHE_COMPILERCHECK=content
+          export CCACHE_SLOPPINESS=time_macros,include_file_mtime,file_macro
           mkdir -p "${CCACHE_DIR}"
           mkdir -p /tmp/ccache_bin
           ln -sf "$(which ccache)" /tmp/ccache_bin/clang
           ln -sf "$(which ccache)" /tmp/ccache_bin/clang++
           export PATH="/tmp/ccache_bin:${PATH}"
 
+          echo "==> Build environment: $(nproc) vCPUs, $(free -h | awk '/Mem:/ {print $2}') RAM"
           echo "==> Initial ccache stats:"
           ccache -s
 

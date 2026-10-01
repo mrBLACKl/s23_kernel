@@ -1,0 +1,310 @@
+&smd {
+	max77705_fuelgauge: max77705-fuelgauge {
+			    /* for 4500mAh battery */
+			    status = "okay";
+			    fuelgauge,fuel_alert_soc = <1>;
+			    fuelgauge,jig_gpio = <SEC_GPIO_REF(AP,tlmm,176) 0>; /* IFC_SENSE_INT_AP */
+			    fuelgauge,jig_low_active;
+			    fuelgauge,capacity_max = <1000>;
+			    fuelgauge,capacity_max_margin = <300>;
+			    fuelgauge,capacity_min = <0>;
+			    fuelgauge,capacity_calculation_type = <28>;
+			    fuelgauge,repeated_fuelalert;
+			    fuelgauge,using_temp_compensation;
+			    fuelgauge,low_temp_limit = <100>;
+			    fuelgauge,vempty_recover_time = <180>; /* 3 mins */
+			    fuelgauge,using_hw_vempty;
+			    fuelgauge,sw_v_empty_voltage = <3200>;
+			    fuelgauge,sw_v_empty_voltage_cisd = <3100>;
+			    fuelgauge,sw_v_empty_recover_voltage = <3480>;
+			    fuelgauge,fg_resistor = <2>;
+#if 1
+			    fuelgauge,bat_id_gpio = <
+#if 1
+					SEC_GPIO_REF(AP,tlmm,97) 0 /* BAT_ID_GPIO 1 */
+#endif
+					SEC_GPIO_REF(AP,tlmm,10) 0 /* BAT_ID_GPIO 0 */
+					>;
+#endif
+#if 0
+			    fuelgauge,sub_bat_id_gpio = <
+#if 0
+					SEC_GPIO_REF(${sub_bat_id_gpio_2}) 0 /* SUB_BAT_ID_GPIO 1 */
+#endif
+					SEC_GPIO_REF(${sub_bat_id_gpio}) 0 /* SUB_BAT_ID_GPIO 0 */
+					>;
+#endif
+			    battery_params {
+				/* battery0 : default */
+				battery0,v_empty = <0xA7E2>; /* Empty: 3350mV, Recover: 3920mV */
+				battery0,v_empty_origin = <0x7D54>; /* Empty: 2500mV, Recover: 3360mV */
+				battery0,capacity = <0x0FEF>;
+				/* fullcapnom(=capacity), dPacc, dQacc,  rcomp0, tempco */
+				battery0,fg_reset_wa_data = <0x0FEF 0x3200 0x03FB 0x003A 0x2534>;
+
+				/* battery1 */
+				battery1,v_empty = <0xA7E2>; /* Empty: 3350mV, Recover: 3920mV */
+				battery1,v_empty_origin = <0x7D54>; /* Empty: 2500mV, Recover: 3360mV */
+				battery1,capacity = <0x0FFF>;
+				/* fullcapnom(=capacity), dPacc, dQacc,  rcomp0, tempco */
+				battery1,fg_reset_wa_data = <0x0FFF 0x3200 0x03FB 0x003A 0x2534>;
+			    };
+		    };
+};
+
+/* /home/dpi/qb5_8814/workspace/P4_1716/android/kernel_platform/kmodule/battery/stable/dm/fuelgauge/max77705/dm1q/max77705_fuelgauge.dtsi */
+&max77705_fuelgauge {
+	fuelgauge,capacity_calculation_type = <0x5C>;
+	fuelgauge,lost_soc_trig_soc = <1000>; /* 100.0% */
+	fuelgauge,lost_soc_trig_d_soc = <20>; /* 2% */
+	fuelgauge,lost_soc_trig_scale = <2>; /* 2x */
+	fuelgauge,lost_soc_guarantee_soc = <30>; /* 3.0% */
+	fuelgauge,lost_soc_min_vol = <3200>; /* 3200mV */
+	fuelgauge,fg_resistor = <5>; /* 2 milliohm */
+	fuelgauge,scale_to_102;
+
+	battery_params {
+		/*
+		 * BAT_ID_1/BAT_ID_2
+		 * 11: SDI, 10: ATL
+		 * 01: ATL WINDING, 00: ATL WINDING : 0
+		 */
+		/* 00 : ATL WINDING : 0 battery data */
+		battery0,v_empty = <0xA561>; /* Empty: 3400mV, Recover: 4000mV */
+		battery0,v_empty_origin = <0x7D54>; /* Empty: 2500mV, Recover: 3360mV */
+		battery0,capacity = <0x05CA>;
+					/* fullcapnom dPacc dQacc RCOMP0 TempCo */
+		battery0,fg_reset_wa_data = <0x05CA 0x3200 0x0172 0x002C 0x171C>;
+
+		battery0,data_ver = <0x3>;
+
+			battery0,atRate = <0x1900>; //2100mA
+			battery0,config = <0x0210>; //0x0110 (FGCC disabled & Thermistor disable)
+			battery0,config2 = <0x0050>; //TAlrtEn as 1 & OCVQen enable
+			battery0,convgCfg = <0x2440>;
+			battery0,fullcaprep = <0x05CA>;
+			battery0,fullsocthr = <0x5F00>; //95%
+			battery0,iavg_empty = <0x04A1>;
+			battery0,learnCFG = <0x2606>;
+			battery0,misccfg = <0x3870>; //0x0870 (MixRate as 1.875000 mA)
+			battery0,cv_mixCap = <0x1356>; //CV_MixCap (2475mA) is 75% of FullCapNom (0x17FA ; 3300mAh)
+			battery0,cv_HalfTime = <0x0600>; //18 minutes --> 30*60/(0.1758125*4) = 1536 = 0x0600
+			battery0,tempNom = <0x1403>;
+			battery0,tempLim = <0x1E05>;
+
+			/* Address 0x80h starts here */
+			battery0,cell_character0 = <
+				0xa790 0xb750 0xba30 0xbbd0 0xbc60 0xbe00 0xbf70 0xc0d0
+				0xc260 0xc410 0xc750 0xc990 0xce20 0xd2e0 0xd680 0xdba0
+			>;
+			/* Address 0x90h starts here */
+			battery0,cell_character1 = <
+				0x0180 0x0f70 0x1180 0x15c0 0x0f80 0x2120 0x0c40 0x0c50
+				0x0c10 0x0720 0x0730 0x0800 0x0720 0x0620 0x0790 0x0790
+			>;
+			/* Address 0xA0h starts here */
+			battery0,cell_character2 = <
+				0x0200 0x0200 0x0200 0x0200 0x0200 0x0200 0x0200 0x0200
+				0x0200 0x0200 0x0200 0x0200 0x0200 0x0200 0x0200 0x0200
+			>;
+
+		battery0,selected_reg = <
+			0x02 0x7F80	/* default */
+			0x12 0x2D00	/* QResidual00 */
+			0x1E 0x01E3	/* ICHGTerm */
+			0x21 0x6200	/* default */
+			0x22 0x1480	/* QResidual10 */
+			0x2A 0x023C	/* RelaxCFG */
+			0x2C 0xE3E1	/* TGAIN */
+			0x2D 0x290E	/* TOFF */
+			0x2E 0x0400	/* CGAIN */
+			0x2F 0x0001	/* COFF */
+			0x32 0x0880	/* QResidual20 */
+			0x33 0xFFFF	/* default */
+			0x37 0x05E0	/* default */
+			0x42 0x0780	/* QResidual30 */
+			0xB4 0x7F80	/* default */
+			0xB8 0x0000	/* default */
+			0xB9 0x006B	/* default */
+			0xBA 0x090C	/* default */
+			>;
+		/* 01 : ATL winding battery data */
+		battery1,v_empty = <0xA561>; /* Empty: 3400mV, Recover: 4000mV */
+		battery1,v_empty_origin = <0x7D54>; /* Empty: 2500mV, Recover: 3360mV */
+		battery1,capacity = <0x05CA>;
+					/* fullcapnom dPacc dQacc RCOMP0 TempCo */
+		battery1,fg_reset_wa_data = <0x05CA 0x3200 0x0172 0x002C 0x171C>;
+
+		battery1,data_ver = <0x4>;
+
+			battery1,atRate = <0x1900>; //2100mA
+			battery1,config = <0x0210>; //0x0110 (FGCC disabled & Thermistor disable)
+			battery1,config2 = <0x0050>; //TAlrtEn as 1 & OCVQen enable
+			battery1,convgCfg = <0x2440>;
+			battery1,fullcaprep = <0x05CA>;
+			battery1,fullsocthr = <0x5F00>; //95%
+			battery1,iavg_empty = <0x04A1>;
+			battery1,learnCFG = <0x2606>;
+			battery1,misccfg = <0x3870>; //0x0870 (MixRate as 1.875000 mA)
+			battery1,cv_mixCap = <0x1356>; //CV_MixCap (2475mA) is 75% of FullCapNom (0x17FA ; 3300mAh)
+			battery1,cv_HalfTime = <0x0600>; //18 minutes --> 30*60/(0.1758125*4) = 1536 = 0x0600
+			battery1,tempNom = <0x1403>;
+			battery1,tempLim = <0x1E05>;
+
+			/* Address 0x80h starts here */
+			battery1,cell_character0 = <
+				0xa790 0xb750 0xba30 0xbbd0 0xbc60 0xbe00 0xbf70 0xc0d0
+				0xc260 0xc410 0xc750 0xc990 0xce20 0xd2e0 0xd680 0xdba0
+			>;
+			/* Address 0x90h starts here */
+			battery1,cell_character1 = <
+				0x0180 0x0f70 0x1180 0x15c0 0x0f80 0x2120 0x0c40 0x0c50
+				0x0c10 0x0720 0x0730 0x0800 0x0720 0x0620 0x0790 0x0790
+			>;
+			/* Address 0xA0h starts here */
+			battery1,cell_character2 = <
+				0x0200 0x0200 0x0200 0x0200 0x0200 0x0200 0x0200 0x0200
+				0x0200 0x0200 0x0200 0x0200 0x0200 0x0200 0x0200 0x0200
+			>;
+
+		battery1,selected_reg = <
+			0x02 0x7F80	/* default */
+			0x12 0x2D00	/* QResidual00 */
+			0x1E 0x01E3	/* ICHGTerm */
+			0x21 0x6200	/* default */
+			0x22 0x1480	/* QResidual10 */
+			0x2A 0x023C	/* RelaxCFG */
+			0x2C 0xE3E1	/* TGAIN */
+			0x2D 0x290E	/* TOFF */
+			0x2E 0x0400	/* CGAIN */
+			0x2F 0x0001	/* COFF */
+			0x32 0x0880	/* QResidual20 */
+			0x33 0xFFFF	/* default */
+			0x37 0x05E0	/* default */
+			0x42 0x0780	/* QResidual30 */
+			0xB4 0x7F80	/* default */
+			0xB8 0x0000	/* default */
+			0xB9 0x006B	/* default */
+			0xBA 0x090C	/* default */
+			>;
+		/* 10 : ATL battery data */
+		battery2,v_empty = <0xA561>; /* Empty: 3400mV, Recover: 4000mV */
+		battery2,v_empty_origin = <0x7D54>; /* Empty: 2500mV, Recover: 3360mV */
+		battery2,capacity = <0x05DC>;
+					/* fullcapnom dPacc dQacc RCOMP0 TempCo */
+		battery2,fg_reset_wa_data = <0x05DC 0x3200 0x0177 0x0023 0x1A1C>;
+
+		battery2,data_ver = <0x3>;
+
+			battery2,atRate = <0x1900>; //2100mA
+			battery2,config = <0x0210>; //0x0110 (FGCC disabled & Thermistor disable)
+			battery2,config2 = <0x0050>; //TAlrtEn as 1 & OCVQen enable
+			battery2,convgCfg = <0x2440>;
+			battery2,fullcaprep = <0x05DC>;
+			battery2,fullsocthr = <0x5F00>; //95%
+			battery2,iavg_empty = <0x04B0>;
+			battery2,learnCFG = <0x2606>;
+			battery2,misccfg = <0x3870>; //0x0870 (MixRate as 1.875000 mA)
+			battery2,cv_mixCap = <0x1356>; //CV_MixCap (2475mA) is 75% of FullCapNom (0x17FA ; 3300mAh)
+			battery2,cv_HalfTime = <0x0600>; //18 minutes --> 30*60/(0.1758125*4) = 1536 = 0x0600
+			battery2,tempNom = <0x1403>;
+			battery2,tempLim = <0x1E05>;
+
+			/* Address 0x80h starts here */
+			battery2,cell_character0 = <
+				0xa880 0xb780 0xb930 0xbb90 0xbc50 0xbd50 0xbf40 0xc1c0
+				0xc520 0xc7c0 0xcb20 0xcd40 0xcf50 0xd2f0 0xd640 0xdc70
+			>;
+			/* Address 0x90h starts here */
+			battery2,cell_character1 = <
+				0x01a0 0x0fa0 0x1070 0x10e0 0x14e0 0x17d0 0x1060 0x0900
+				0x07d0 0x0820 0x0730 0x0810 0x0620 0x0720 0x06f0 0x06f0
+			>;
+			/* Address 0xA0h starts here */
+			battery2,cell_character2 = <
+				0x0200 0x0200 0x0200 0x0200 0x0200 0x0200 0x0200 0x0200
+				0x0200 0x0200 0x0200 0x0200 0x0200 0x0200 0x0200 0x0200
+			>;
+
+		battery2,selected_reg = <
+			0x02 0x7F80	/* default */
+			0x12 0x2D00	/* QResidual00 */
+			0x1E 0x01E3	/* ICHGTerm */
+			0x21 0x6200	/* default */
+			0x22 0x1480	/* QResidual10 */
+			0x2A 0x023C	/* RelaxCFG */
+			0x2C 0xE3E1	/* TGAIN */
+			0x2D 0x290E	/* TOFF */
+			0x2E 0x0400	/* CGAIN */
+			0x2F 0x0001	/* COFF */
+			0x32 0x0880	/* QResidual20 */
+			0x33 0xFFFF	/* default */
+			0x37 0x05E0	/* default */
+			0x42 0x0780	/* QResidual30 */
+			0xB4 0x7F80	/* default */
+			0xB8 0x0000	/* default */
+			0xB9 0x006B	/* default */
+			0xBA 0x090C	/* default */
+			>;
+
+		/* 11: SDI battery data */
+		battery3,v_empty = <0xA561>; /* Empty: 3400mV, Recover: 4000mV */
+		battery3,v_empty_origin = <0x7D54>; /* Empty: 2500mV, Recover: 3360mV */
+		battery3,capacity = <0x05CB>;
+					/* fullcapnom dPacc dQacc RCOMP0 TempCo */
+		battery3,fg_reset_wa_data = <0x05CA 0x3200 0x0172 0x002C 0x1B1F>;
+
+		battery3,data_ver = <0x3>;
+
+			battery3,atRate = <0x1900>; //2100mA
+			battery3,config = <0x0210>; //0x0110 (FGCC disabled & Thermistor disable)
+			battery3,config2 = <0x0050>; //TAlrtEn as 1 & OCVQen enable
+			battery3,convgCfg = <0x2440>;
+			battery3,fullcaprep = <0x05CA>;
+			battery3,fullsocthr = <0x5F00>; //95%
+			battery3,iavg_empty = <0x04A3>;
+			battery3,learnCFG = <0x2606>;
+			battery3,misccfg = <0x3870>; //0x0870 (MixRate as 1.875000 mA)
+			battery3,cv_mixCap = <0x1356>; //CV_MixCap (2475mA) is 75% of FullCapNom (0x17FA ; 3300mAh)
+			battery3,cv_HalfTime = <0x0600>; //18 minutes --> 30*60/(0.1758125*4) = 1536 = 0x0600
+			battery3,tempNom = <0x1403>;
+			battery3,tempLim = <0x1E05>;
+
+			/* Address 0x80h starts here */
+			battery3,cell_character0 = <
+				0xa770 0xb7a0 0xb930 0xbb40 0xbd20 0xbe30 0xbf00 0xc010
+				0xc120 0xc430 0xc780 0xca90 0xce50 0xd170 0xd490 0xdb10
+			>;
+			/* Address 0x90h starts here */
+			battery3,cell_character1 = <
+				0x0200 0x0e30 0x0f80 0x14d0 0x18d0 0x1950 0x10c0 0x12c0
+				0x0a20 0x07e0 0x0730 0x0720 0x0710 0x0810 0x0620 0x0620
+			>;
+			/* Address 0xA0h starts here */
+			battery3,cell_character2 = <
+				0x0200 0x0200 0x0200 0x0200 0x0200 0x0200 0x0200 0x0200
+				0x0200 0x0200 0x0200 0x0200 0x0200 0x0200 0x0200 0x0200
+			>;
+
+		battery3,selected_reg = <
+			0x02 0x7F80	/* default */
+			0x12 0x4000	/* QResidual00 */
+			0x1E 0x01E3	/* ICHGTerm */
+			0x21 0x6200	/* default */
+			0x22 0x1D00	/* QResidual10 */
+			0x2A 0x023C	/* RelaxCFG */
+			0x2C 0xE3E1	/* TGAIN */
+			0x2D 0x290E	/* TOFF */
+			0x2E 0x0400	/* CGAIN */
+			0x2F 0x0001	/* COFF */
+			0x32 0x0B00	/* QResidual20 */
+			0x33 0xFFFF	/* default */
+			0x37 0x05E0	/* default */
+			0x42 0x0680	/* QResidual30 */
+			0xB4 0x7F80	/* default */
+			0xB8 0x0000	/* default */
+			0xB9 0x006B	/* default */
+			0xBA 0x090C	/* default */
+			>;
+	};
+};

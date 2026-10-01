@@ -1,0 +1,30 @@
+# Build output directories
+out/
+output_boot/
+device/qcom/gki-kernel/
+
+# Large prebuilt binaries (fetched during GitHub Actions workflow)
+kernel_platform/prebuilts/clang/
+kernel_platform/prebuilts/jdk/
+kernel_platform/prebuilts/ndk-r23/
+kernel_platform/prebuilts/gcc/
+kernel_platform/prebuilts/build-tools/
+kernel_platform/prebuilts/kernel-build-tools/
+kernel_platform/prebuilts/bazel/
+
+# Compressed archives & images
+*.tar.gz
+*.tar
+*.zip
+*.img
+*.lz4
+*.ko
+*.o
+*.cmd
+
+# Temporary files
+*.swp
+*.bak
+*~
+.DS_Store
+Thumbs.db

@@ -1,0 +1,174 @@
+name: Build Samsung S23 (SM-S911B) Kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: 'Build variant (user or userdebug)'
+        required: true
+        default: 'user'
+      spl_bypass:
+        description: 'Set Security Patch Level to 2099-12 (anti-rollback bypass)'
+        required: true
+        type: boolean
+        default: true
+
+jobs:
+  build:
+    name: Build Kernel & Package Boot
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout Kernel Source
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+          fetch-depth: 1
+
+      - name: Free Disk Space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          df -h
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc \
+            bison \
+            build-essential \
+            ccache \
+            curl \
+            flex \
+            g++-multilib \
+            gcc-multilib \
+            git \
+            gnupg \
+            gperf \
+            libelf-dev \
+            libssl-dev \
+            lz4 \
+            liblz4-tool \
+            python3 \
+            python-is-python3 \
+            rsync \
+            device-tree-compiler \
+            zip \
+            zlib1g-dev
+
+      - name: Setup Java 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+
+      - name: Setup Prebuilt Clang Toolchain (clang-r450784e)
+        run: |
+          PREBUILTS_DIR="${GITHUB_WORKSPACE}/kernel_platform/prebuilts"
+          CLANG_DIR="${PREBUILTS_DIR}/clang/host/linux-x86/clang-r450784e"
+
+          if [ ! -f "${CLANG_DIR}/bin/clang" ]; then
+            echo "==> Fetching Clang r450784e from Google AOSP..."
+            mkdir -p "${PREBUILTS_DIR}/clang/host/linux-x86"
+            git clone --depth 1 \
+              https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 \
+              -b master-kernel-build-2022 \
+              /tmp/aosp_clang
+            mv /tmp/aosp_clang/clang-r450784e "${PREBUILTS_DIR}/clang/host/linux-x86/"
+            rm -rf /tmp/aosp_clang
+          fi
+
+          echo "==> Clang compiler verification:"
+          "${CLANG_DIR}/bin/clang" --version
+
+      - name: Setup Prebuilt Build Tools & Host Binaries
+        run: |
+          PREBUILTS_DIR="${GITHUB_WORKSPACE}/kernel_platform/prebuilts"
+          
+          # Setup build-tools if missing
+          mkdir -p "${PREBUILTS_DIR}/build-tools/linux-x86/bin"
+          for tool in bison flex m4 make ninja dtc; do
+            if [ ! -e "${PREBUILTS_DIR}/build-tools/linux-x86/bin/${tool}" ]; then
+              ln -sf "$(which ${tool} || echo /bin/true)" "${PREBUILTS_DIR}/build-tools/linux-x86/bin/${tool}"
+            fi
+          done
+
+          # Setup kernel-build-tools if missing
+          mkdir -p "${PREBUILTS_DIR}/kernel-build-tools/linux-x86/bin"
+          AVBTOOL_LOCAL="${GITHUB_WORKSPACE}/kernel_platform/external/avb/avbtool.py"
+          if [ -f "${AVBTOOL_LOCAL}" ]; then
+            ln -sf "${AVBTOOL_LOCAL}" "${PREBUILTS_DIR}/kernel-build-tools/linux-x86/bin/avbtool"
+          elif [ -f "${GITHUB_WORKSPACE}/kernel_platform/build/kernel/build-tools/path/linux-x86/avbtool" ]; then
+            ln -sf "${GITHUB_WORKSPACE}/kernel_platform/build/kernel/build-tools/path/linux-x86/avbtool" "${PREBUILTS_DIR}/kernel-build-tools/linux-x86/bin/avbtool"
+          fi
+
+      - name: Build Kernel
+        run: |
+          chmod +x ./build_kernel_GKI.sh
+          # Run build for Samsung Galaxy S23 (dm1q_eur_openx)
+          ./build_kernel_GKI.sh dm1q_eur_openx ${{ github.event.inputs.variant || 'user' }} kalama
+
+      - name: Package Boot Images & Odin Tar
+        run: |
+          OUTPUT_DIR="${GITHUB_WORKSPACE}/output_boot"
+          mkdir -p "${OUTPUT_DIR}"
+
+          KERNEL_IMG="${GITHUB_WORKSPACE}/device/qcom/gki-kernel/Image"
+          if [ ! -f "${KERNEL_IMG}" ]; then
+            KERNEL_IMG="${GITHUB_WORKSPACE}/out/msm-kalama-kalama-gki/dist/Image"
+          fi
+
+          echo "Using kernel: ${KERNEL_IMG}"
+          cp "${KERNEL_IMG}" "${OUTPUT_DIR}/Image"
+
+          # Determine security patch level
+          SPL="2026-09"
+          SPL_FULL="2026-09-05"
+          if [ "${{ github.event.inputs.spl_bypass }}" = "true" ]; then
+            SPL="2099-12"
+            SPL_FULL="2099-12-05"
+          fi
+
+          echo "==> Packaging boot.img (Header v4, SPL: ${SPL})..."
+          python3 "${GITHUB_WORKSPACE}/kernel_platform/tools/mkbootimg/mkbootimg.py" \
+            --header_version 4 \
+            --kernel "${KERNEL_IMG}" \
+            --pagesize 4096 \
+            --os_version 13.0.0 \
+            --os_patch_level "${SPL}" \
+            --output "${OUTPUT_DIR}/boot.img"
+
+          # Sign with AVB test key
+          TESTKEY="${GITHUB_WORKSPACE}/kernel_platform/tools/mkbootimg/gki/testdata/testkey_rsa4096.pem"
+          python3 "${GITHUB_WORKSPACE}/kernel_platform/external/avb/avbtool.py" add_hash_footer \
+            --image "${OUTPUT_DIR}/boot.img" \
+            --partition_name boot \
+            --partition_size 100663296 \
+            --key "${TESTKEY}" \
+            --algorithm SHA256_RSA4096 \
+            --prop com.android.build.boot.os_version:13 \
+            --prop com.android.build.boot.security_patch:"${SPL_FULL}"
+
+          echo "==> Creating Odin flashable boot.tar (using lz4 -B6)..."
+          lz4 -B6 --content-size -f "${OUTPUT_DIR}/boot.img" "${OUTPUT_DIR}/boot.img.lz4"
+          (cd "${OUTPUT_DIR}" && tar -cvf boot.tar boot.img.lz4 && rm -f boot.img.lz4)
+
+          # Copy vendor_boot and modules if available
+          if [ -f "${GITHUB_WORKSPACE}/out/msm-kalama-kalama-gki/dist/vendor_boot.img" ]; then
+            cp "${GITHUB_WORKSPACE}/out/msm-kalama-kalama-gki/dist/vendor_boot.img" "${OUTPUT_DIR}/"
+          fi
+          if [ -f "${GITHUB_WORKSPACE}/out/msm-kalama-kalama-gki/dist/vendor_dlkm.img" ]; then
+            cp "${GITHUB_WORKSPACE}/out/msm-kalama-kalama-gki/dist/vendor_dlkm.img" "${OUTPUT_DIR}/"
+          fi
+
+          ls -lh "${OUTPUT_DIR}"
+
+      - name: Upload Boot & Kernel Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: S23-Kernel-Boot-${{ github.event.inputs.variant || 'user' }}
+          path: ${{ github.workspace }}/output_boot/*
+          if-no-files-found: error

@@ -216,6 +216,13 @@ jobs:
           lz4 -B6 --content-size -f "${OUTPUT_DIR}/boot.img" "${OUTPUT_DIR}/boot.img.lz4"
           (cd "${OUTPUT_DIR}" && tar -cvf boot.tar boot.img.lz4 && rm -f boot.img.lz4)
 
+          echo "==> Creating vbmeta_disabled.tar for Samsung AVB verification bypass..."
+          python3 "${GITHUB_WORKSPACE}/kernel_platform/external/avb/avbtool.py" make_vbmeta_image \
+            --flags 2 \
+            --output "${OUTPUT_DIR}/vbmeta.img"
+          lz4 -B6 --content-size -f "${OUTPUT_DIR}/vbmeta.img" "${OUTPUT_DIR}/vbmeta.img.lz4"
+          (cd "${OUTPUT_DIR}" && tar -cvf vbmeta_disabled.tar vbmeta.img.lz4 && rm -f vbmeta.img.lz4 vbmeta.img)
+
           # Copy vendor_boot and modules if available
           if [ -f "${GITHUB_WORKSPACE}/out/msm-kalama-kalama-gki/dist/vendor_boot.img" ]; then
             cp "${GITHUB_WORKSPACE}/out/msm-kalama-kalama-gki/dist/vendor_boot.img" "${OUTPUT_DIR}/"

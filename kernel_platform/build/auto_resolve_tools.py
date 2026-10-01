@@ -135,9 +135,35 @@ exit 0
         safe_symlink(host_pahole, os.path.join(k_tools, "pahole"))
         safe_symlink(host_pahole, os.path.join(b_bin, "pahole"))
 
-    # 8. Setup safe stubs for platform/certification/ABI tools
+    # 8. Setup smart build_image and build_super_image
+    build_image_script = """#!/bin/bash
+OUT="$3"
+if [ -n "$OUT" ]; then
+    mkdir -p "$(dirname "$OUT")"
+    truncate -s 64M "$OUT" 2>/dev/null || dd if=/dev/zero of="$OUT" bs=1M count=64 2>/dev/null
+    mkfs.ext4 -F "$OUT" >/dev/null 2>&1 || true
+fi
+exit 0
+"""
+    write_executable(os.path.join(k_tools, "build_image"), build_image_script)
+    safe_symlink(os.path.join(k_tools, "build_image"), os.path.join(b_bin, "build_image"))
+    safe_symlink(os.path.join(k_tools, "build_image"), os.path.join(build_tools_path, "build_image"))
+
+    build_super_image_script = """#!/bin/bash
+OUT="${@: -1}"
+if [ -n "$OUT" ]; then
+    mkdir -p "$(dirname "$OUT")"
+    touch "$OUT"
+fi
+exit 0
+"""
+    write_executable(os.path.join(k_tools, "build_super_image"), build_super_image_script)
+    safe_symlink(os.path.join(k_tools, "build_super_image"), os.path.join(b_bin, "build_super_image"))
+    safe_symlink(os.path.join(k_tools, "build_super_image"), os.path.join(build_tools_path, "build_super_image"))
+
+    # Stubs for remaining platform/certification/ABI tools
     stubs = (
-        "certify_bootimg", "build_image", "build_super_image", "lpmake",
+        "certify_bootimg", "lpmake",
         "abidiff", "abidw", "abitidy", "stgdiff", "interceptor", "interceptor_analysis",
         "cxx_extractor", "runextractor", "blk_alloc_to_base_fs"
     )

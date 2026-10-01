@@ -136,6 +136,8 @@ jobs:
           sudo ln -sf "${GITHUB_WORKSPACE}/kernel_platform/tools/libufdt/utils/src/mkdtboimg.py" /usr/local/bin/mkdtimg
           sudo ln -sf "${GITHUB_WORKSPACE}/kernel_platform/external/avb/avbtool.py" /usr/local/bin/avbtool
           sudo ln -sf "${GITHUB_WORKSPACE}/kernel_platform/prebuilts/kernel-build-tools/linux-x86/bin/ufdt_apply_overlay" /usr/local/bin/ufdt_apply_overlay
+          sudo ln -sf "${GITHUB_WORKSPACE}/kernel_platform/prebuilts/kernel-build-tools/linux-x86/bin/build_image" /usr/local/bin/build_image
+          sudo ln -sf "${GITHUB_WORKSPACE}/kernel_platform/prebuilts/kernel-build-tools/linux-x86/bin/build_super_image" /usr/local/bin/build_super_image
 
           echo "==> Tooling verification:"
           nproc
@@ -153,6 +155,7 @@ jobs:
           export MAKEFLAGS="-j$(nproc)"
           export BUILD_GKI_CERTIFICATION_TOOLS=0
           export BUILD_SYSTEM_DLKM=0
+          export BUILD_VENDOR_DLKM=0
           export BISON_PKGDATADIR=/usr/share/bison
           export M4=/usr/bin/m4
 

@@ -21,6 +21,7 @@ export LTO=none
 export GKI_KMI_SYMBOL_LIST_STRICT_MODE=0
 export GKI_TRIM_NONLISTED_KMI=0
 export MAKEFLAGS="-j$(nproc)"
+export BUILD_GKI_CERTIFICATION_TOOLS=0
 
 export ANDROID_PRODUCT_OUT=${ANDROID_BUILD_TOP}/out/target/product/${MODEL}
 mkdir -p ${ANDROID_PRODUCT_OUT}

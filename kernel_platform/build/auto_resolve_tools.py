@@ -37,9 +37,10 @@ def main():
     k_tools = os.path.join(prebuilts, "kernel-build-tools/linux-x86/bin")
     b_path = os.path.join(prebuilts, "build-tools/path/linux-x86")
     b_bin = os.path.join(prebuilts, "build-tools/linux-x86/bin")
+    b_share = os.path.join(prebuilts, "build-tools/linux-x86/share")
     p_path = os.path.join(root, "kernel_platform/build/kernel/build-tools/path/linux-x86")
 
-    for d in (k_tools, b_path, b_bin, p_path):
+    for d in (k_tools, b_path, b_bin, b_share, p_path):
         os.makedirs(d, exist_ok=True)
 
     # 1. Non-recursive toybox dispatcher
@@ -72,7 +73,6 @@ exit 1
                 f.write(data)
     os.chmod(mkdtboimg_path, 0o755)
 
-    # Link mkdtboimg and mkdtimg
     for tool_name in ("mkdtboimg.py", "mkdtboimg", "mkdtimg"):
         safe_symlink(mkdtboimg_path, os.path.join(k_tools, tool_name))
         safe_symlink(mkdtboimg_path, os.path.join(b_bin, tool_name))
@@ -94,7 +94,19 @@ exit 1
         safe_symlink(avbtool_path, os.path.join(k_tools, tool_name))
         safe_symlink(avbtool_path, os.path.join(b_bin, tool_name))
 
-    # 4. Setup ufdt_apply_overlay (uses host fdtoverlay)
+    # 4. Setup bison with proper M4 / BISON_PKGDATADIR
+    if os.path.exists("/usr/share/bison"):
+        safe_symlink("/usr/share/bison", os.path.join(b_share, "bison"))
+    bison_wrapper = """#!/bin/bash
+export BISON_PKGDATADIR=/usr/share/bison
+export M4=/usr/bin/m4
+exec /usr/bin/bison "$@"
+"""
+    write_executable(os.path.join(b_bin, "bison"), bison_wrapper)
+    write_executable(os.path.join(b_path, "bison"), bison_wrapper)
+    write_executable(os.path.join(k_tools, "bison"), bison_wrapper)
+
+    # 5. Setup ufdt_apply_overlay (uses host fdtoverlay)
     ufdt_script = """#!/bin/bash
 if which fdtoverlay >/dev/null 2>&1; then
   fdtoverlay -i "$1" -o "$3" "$2" 2>/dev/null || exit 0
@@ -103,7 +115,7 @@ exit 0
 """
     write_executable(os.path.join(k_tools, "ufdt_apply_overlay"), ufdt_script)
 
-    # 5. Setup soong_zip handler
+    # 6. Setup soong_zip handler
     soong_script = """#!/bin/bash
 while [ $# -gt 0 ]; do
   if [ "$1" = "-o" ]; then
@@ -117,18 +129,13 @@ exit 0
 """
     write_executable(os.path.join(k_tools, "soong_zip"), soong_script)
 
-    # 6. Pahole linking
-    host_pahole = shutil.which("pahole")
+    # 7. Pahole linking
+    host_pahole = shutil.which("pahole") or (os.path.exists("/usr/bin/pahole") and "/usr/bin/pahole")
     if host_pahole:
         safe_symlink(host_pahole, os.path.join(k_tools, "pahole"))
         safe_symlink(host_pahole, os.path.join(b_bin, "pahole"))
-    else:
-        # Check standard path
-        if os.path.exists("/usr/bin/pahole"):
-            safe_symlink("/usr/bin/pahole", os.path.join(k_tools, "pahole"))
-            safe_symlink("/usr/bin/pahole", os.path.join(b_bin, "pahole"))
 
-    # 7. Setup safe stubs for platform/certification/ABI tools
+    # 8. Setup safe stubs for platform/certification/ABI tools
     stubs = (
         "certify_bootimg", "build_image", "build_super_image", "lpmake",
         "abidiff", "abidw", "abitidy", "stgdiff", "interceptor", "interceptor_analysis",
@@ -138,14 +145,14 @@ exit 0
         stub_path = os.path.join(k_tools, s)
         write_executable(stub_path, "#!/bin/bash\nexit 0\n")
 
-    # 8. Scan and link all common host tools into prebuilt dirs
+    # 9. Scan and link all common host tools into prebuilt dirs
     common_tools = [
         "nproc", "readlink", "sed", "tr", "grep", "awk", "find", "xargs",
         "basename", "dirname", "cp", "mv", "rm", "mkdir", "rmdir", "cat",
         "head", "tail", "wc", "sort", "uniq", "cut", "tee", "touch", "chmod",
         "chown", "date", "expr", "sleep", "uname", "which", "id", "whoami",
         "stat", "md5sum", "sha1sum", "sha256sum", "sha512sum", "tar", "gzip",
-        "bzip2", "xz", "lz4", "mktemp", "bc", "bison", "flex", "m4", "make",
+        "bzip2", "xz", "lz4", "mktemp", "bc", "flex", "m4", "make",
         "ninja", "dtc", "openssl", "python", "python3", "cpio", "dd", "diff",
         "realpath", "echo", "ls", "pwd", "du", "ps", "bzcat", "xzcat", "cmp",
         "comm", "env", "getconf", "hostname", "ln", "od", "paste", "pgrep",
@@ -160,8 +167,7 @@ exit 0
             safe_symlink(which, os.path.join(b_bin, t))
             safe_symlink(which, os.path.join(k_tools, t))
 
-    # 9. Final sweep: iterate over every symlink in p_path and b_path
-    # If any link target does not exist, write the host binary or safe stub directly at the target!
+    # 10. Final sweep: iterate over every symlink in p_path and b_path
     total_swept = 0
     total_broken_fixed = 0
     for scan_dir in (p_path, b_path):
@@ -182,7 +188,7 @@ exit 0
                     log(f"Sweep fixed stub: {name} at {abs_target}")
                 total_broken_fixed += 1
 
-    # 10. Audit validation
+    # 11. Audit validation
     broken_remaining = [
         name for name in os.listdir(p_path)
         if not os.path.exists(os.path.join(p_path, name))
@@ -190,10 +196,6 @@ exit 0
     log(f"Swept {total_swept} links. Fixed {total_broken_fixed} dangling links.")
     if broken_remaining:
         log(f"CRITICAL ERROR: {len(broken_remaining)} broken links remain: {broken_remaining}")
-        for b in broken_remaining:
-            link = os.path.join(p_path, b)
-            target = os.path.normpath(os.path.join(p_path, os.readlink(link)))
-            log(f"  {b} -> {target} (exists={os.path.exists(target)}, islink={os.path.islink(target)})")
         sys.exit(1)
     else:
         log("PERFECT AUDIT: 0 broken links remain in BUILD_TOOLS_PATH. All tools ready!")

@@ -23,6 +23,8 @@ export GKI_TRIM_NONLISTED_KMI=0
 export MAKEFLAGS="-j$(nproc)"
 export BUILD_GKI_CERTIFICATION_TOOLS=0
 export BUILD_SYSTEM_DLKM=0
+export BISON_PKGDATADIR=/usr/share/bison
+export M4=/usr/bin/m4
 
 export ANDROID_PRODUCT_OUT=${ANDROID_BUILD_TOP}/out/target/product/${MODEL}
 mkdir -p ${ANDROID_PRODUCT_OUT}

@@ -153,6 +153,8 @@ jobs:
           export MAKEFLAGS="-j$(nproc)"
           export BUILD_GKI_CERTIFICATION_TOOLS=0
           export BUILD_SYSTEM_DLKM=0
+          export BISON_PKGDATADIR=/usr/share/bison
+          export M4=/usr/bin/m4
 
           echo "==> Build environment: $(nproc) vCPUs, $(free -h | awk '/Mem:/ {print $2}') RAM"
           echo "==> Verifying nproc and host tools:"

@@ -16,7 +16,12 @@ export ANDROID_BUILD_TOP=$(pwd)
 export TARGET_PRODUCT=gki
 export TARGET_BOARD_PLATFORM=gki
 
+export LTO=none
+export GKI_KMI_SYMBOL_LIST_STRICT_MODE=0
+export GKI_TRIM_NONLISTED_KMI=0
+
 export ANDROID_PRODUCT_OUT=${ANDROID_BUILD_TOP}/out/target/product/${MODEL}
+mkdir -p ${ANDROID_PRODUCT_OUT}
 export OUT_DIR=${ANDROID_BUILD_TOP}/out/msm-${CHIPSET_NAME}-${CHIPSET_NAME}-${TARGET_PRODUCT}
 
 # for Lcd(techpack) driver build

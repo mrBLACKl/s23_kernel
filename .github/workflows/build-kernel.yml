@@ -107,9 +107,11 @@ jobs:
 
       - name: Build Kernel
         run: |
+          # Convert any Windows CRLF to Unix LF on all scripts
+          find . -type f -name "*.sh" -exec sed -i 's/\r$//' {} + 2>/dev/null || true
           chmod +x ./build_kernel_GKI.sh
           # Run build for Samsung Galaxy S23 (dm1q_eur_openx)
-          ./build_kernel_GKI.sh dm1q_eur_openx ${{ github.event.inputs.variant || 'user' }} kalama
+          bash ./build_kernel_GKI.sh dm1q_eur_openx ${{ github.event.inputs.variant || 'user' }} kalama
 
       - name: Package Boot Images & Odin Tar
         run: |

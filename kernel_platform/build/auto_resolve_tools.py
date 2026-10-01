@@ -146,8 +146,8 @@ fi
 exit 0
 """
     write_executable(os.path.join(k_tools, "build_image"), build_image_script)
-    safe_symlink(os.path.join(k_tools, "build_image"), os.path.join(b_bin, "build_image"))
-    safe_symlink(os.path.join(k_tools, "build_image"), os.path.join(build_tools_path, "build_image"))
+    for d in (b_bin, b_path, p_path):
+        safe_symlink(os.path.join(k_tools, "build_image"), os.path.join(d, "build_image"))
 
     build_super_image_script = """#!/bin/bash
 OUT="${@: -1}"
@@ -158,8 +158,8 @@ fi
 exit 0
 """
     write_executable(os.path.join(k_tools, "build_super_image"), build_super_image_script)
-    safe_symlink(os.path.join(k_tools, "build_super_image"), os.path.join(b_bin, "build_super_image"))
-    safe_symlink(os.path.join(k_tools, "build_super_image"), os.path.join(build_tools_path, "build_super_image"))
+    for d in (b_bin, b_path, p_path):
+        safe_symlink(os.path.join(k_tools, "build_super_image"), os.path.join(d, "build_super_image"))
 
     # Stubs for remaining platform/certification/ABI tools
     stubs = (

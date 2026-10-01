@@ -127,19 +127,36 @@ jobs:
       - name: Setup Prebuilt Build Tools & Host Binaries
         run: |
           PREBUILTS_DIR="${GITHUB_WORKSPACE}/kernel_platform/prebuilts"
+          BUILD_TOOLS_PATH="${GITHUB_WORKSPACE}/kernel_platform/build/kernel/build-tools/path/linux-x86"
           
           mkdir -p "${PREBUILTS_DIR}/build-tools/linux-x86/bin"
           mkdir -p "${PREBUILTS_DIR}/build-tools/path/linux-x86"
+          mkdir -p "${BUILD_TOOLS_PATH}"
 
-          # Create universal toybox wrapper script
-          printf '#!/bin/bash\nCMD="$(basename "$0")"\nif [ "$CMD" = "toybox" ]; then\n  CMD="$1"\n  shift\nfi\nexec "$CMD" "$@"\n' > "${PREBUILTS_DIR}/build-tools/linux-x86/bin/toybox"
+          # Create bullet-proof non-recursive toybox dispatcher script
+          cat << 'EOF' > "${PREBUILTS_DIR}/build-tools/linux-x86/bin/toybox"
+#!/bin/bash
+CMD="$(basename "$0")"
+if [ "$CMD" = "toybox" ]; then
+  CMD="$1"
+  shift
+fi
+for p in /usr/bin /bin /usr/local/bin; do
+  if [ -x "$p/$CMD" ] && [ "$p/$CMD" != "$0" ]; then
+    exec "$p/$CMD" "$@"
+  fi
+done
+echo "Host binary for $CMD not found" >&2
+exit 1
+EOF
           chmod +x "${PREBUILTS_DIR}/build-tools/linux-x86/bin/toybox"
 
-          # Populate build-tools with all host utilities
-          for tool in nproc readlink sed tr grep awk find xargs basename dirname cp mv rm mkdir rmdir cat head tail wc sort uniq cut tee touch chmod chown date expr sleep uname which id whoami stat md5sum sha1sum sha256sum tar gzip bzip2 xz lz4 mktemp bc bison flex m4 make ninja dtc openssl python python3; do
-            which_tool=$(which "${tool}" 2>/dev/null || echo /bin/true)
+          # Populate both prebuilts and build/kernel/build-tools/path/linux-x86 with direct host binaries
+          for tool in nproc readlink sed tr grep awk find xargs basename dirname cp mv rm mkdir rmdir cat head tail wc sort uniq cut tee touch chmod chown date expr sleep uname which id whoami stat md5sum sha1sum sha256sum tar gzip bzip2 xz lz4 mktemp bc bison flex m4 make ninja dtc openssl python python3 cpio dd diff realpath; do
+            which_tool=$(which "${tool}" 2>/dev/null || echo "/usr/bin/${tool}")
             ln -sf "${which_tool}" "${PREBUILTS_DIR}/build-tools/path/linux-x86/${tool}"
             ln -sf "${which_tool}" "${PREBUILTS_DIR}/build-tools/linux-x86/bin/${tool}"
+            ln -sf "${which_tool}" "${BUILD_TOOLS_PATH}/${tool}"
           done
 
           # Setup kernel-build-tools if missing
@@ -147,18 +164,8 @@ jobs:
           AVBTOOL_LOCAL="${GITHUB_WORKSPACE}/kernel_platform/external/avb/avbtool.py"
           if [ -f "${AVBTOOL_LOCAL}" ]; then
             ln -sf "${AVBTOOL_LOCAL}" "${PREBUILTS_DIR}/kernel-build-tools/linux-x86/bin/avbtool"
-          elif [ -f "${GITHUB_WORKSPACE}/kernel_platform/build/kernel/build-tools/path/linux-x86/avbtool" ]; then
-            ln -sf "${GITHUB_WORKSPACE}/kernel_platform/build/kernel/build-tools/path/linux-x86/avbtool" "${PREBUILTS_DIR}/kernel-build-tools/linux-x86/bin/avbtool"
+            ln -sf "${AVBTOOL_LOCAL}" "${BUILD_TOOLS_PATH}/avbtool"
           fi
-
-      - name: Cache Compiler (ccache)
-        uses: actions/cache@v4
-        with:
-          path: ~/.ccache
-          key: ${{ runner.os }}-kernel-ccache-${{ github.ref }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-kernel-ccache-${{ github.ref }}-
-            ${{ runner.os }}-kernel-ccache-
 
       - name: Build Kernel
         run: |
@@ -169,26 +176,14 @@ jobs:
           export HERMETIC_TOOLCHAIN=0
           export MAKEFLAGS="-j$(nproc)"
 
-          # Setup ccache for compilation caching
-          export CCACHE_DIR="${HOME}/.ccache"
-          export CCACHE_MAXSIZE="15G"
-          export CCACHE_COMPILERCHECK=content
-          export CCACHE_SLOPPINESS=time_macros,include_file_mtime,file_macro
-          mkdir -p "${CCACHE_DIR}"
-          mkdir -p /tmp/ccache_bin
-          ln -sf "$(which ccache)" /tmp/ccache_bin/clang
-          ln -sf "$(which ccache)" /tmp/ccache_bin/clang++
-          export PATH="/tmp/ccache_bin:${PATH}"
-
           echo "==> Build environment: $(nproc) vCPUs, $(free -h | awk '/Mem:/ {print $2}') RAM"
-          echo "==> Initial ccache stats:"
-          ccache -s
+          echo "==> Verifying nproc and host tools:"
+          nproc
+          which nproc
+          ${GITHUB_WORKSPACE}/kernel_platform/build/kernel/build-tools/path/linux-x86/nproc
 
           # Run build for Samsung Galaxy S23 (dm1q_eur_openx)
           bash ./build_kernel_GKI.sh dm1q_eur_openx ${{ github.event.inputs.variant || 'user' }} kalama
-
-          echo "==> Final ccache stats:"
-          ccache -s
 
       - name: Package Boot Images & Odin Tar
         run: |

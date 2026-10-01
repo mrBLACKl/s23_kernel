@@ -127,55 +127,21 @@ jobs:
 
       - name: Setup Prebuilt Build Tools & Host Binaries
         run: |
-          PREBUILTS_DIR="${GITHUB_WORKSPACE}/kernel_platform/prebuilts"
-          BUILD_TOOLS_PATH="${GITHUB_WORKSPACE}/kernel_platform/build/kernel/build-tools/path/linux-x86"
-          
-          mkdir -p "${PREBUILTS_DIR}/build-tools/linux-x86/bin"
-          mkdir -p "${PREBUILTS_DIR}/build-tools/path/linux-x86"
-          mkdir -p "${BUILD_TOOLS_PATH}"
+          chmod +x "${GITHUB_WORKSPACE}/kernel_platform/build/auto_resolve_tools.py"
+          python3 "${GITHUB_WORKSPACE}/kernel_platform/build/auto_resolve_tools.py"
 
-          # Create bullet-proof non-recursive toybox dispatcher script
-          printf '#!/bin/bash\nCMD="$(basename "$0")"\nif [ "$CMD" = "toybox" ]; then\n  CMD="$1"\n  shift\nfi\nfor p in /usr/bin /bin /usr/local/bin; do\n  if [ -x "$p/$CMD" ] && [ "$p/$CMD" != "$0" ]; then\n    exec "$p/$CMD" "$@"\n  fi\ndone\necho "Host binary for $CMD not found" >&2\nexit 1\n' > "${PREBUILTS_DIR}/build-tools/linux-x86/bin/toybox"
-          chmod +x "${PREBUILTS_DIR}/build-tools/linux-x86/bin/toybox"
+          # System-wide links for critical build tools
+          sudo ln -sf "${GITHUB_WORKSPACE}/kernel_platform/tools/libufdt/utils/src/mkdtboimg.py" /usr/local/bin/mkdtboimg.py
+          sudo ln -sf "${GITHUB_WORKSPACE}/kernel_platform/tools/libufdt/utils/src/mkdtboimg.py" /usr/local/bin/mkdtboimg
+          sudo ln -sf "${GITHUB_WORKSPACE}/kernel_platform/tools/libufdt/utils/src/mkdtboimg.py" /usr/local/bin/mkdtimg
+          sudo ln -sf "${GITHUB_WORKSPACE}/kernel_platform/external/avb/avbtool.py" /usr/local/bin/avbtool
+          sudo ln -sf "${GITHUB_WORKSPACE}/kernel_platform/prebuilts/kernel-build-tools/linux-x86/bin/ufdt_apply_overlay" /usr/local/bin/ufdt_apply_overlay
 
-          # Populate both prebuilts and build/kernel/build-tools/path/linux-x86 with direct host binaries
-          for tool in nproc readlink sed tr grep awk find xargs basename dirname cp mv rm mkdir rmdir cat head tail wc sort uniq cut tee touch chmod chown date expr sleep uname which id whoami stat md5sum sha1sum sha256sum tar gzip bzip2 xz lz4 mktemp bc bison flex m4 make ninja dtc openssl python python3 cpio dd diff realpath pahole; do
-            which_tool=$(which "${tool}" 2>/dev/null || echo "/usr/bin/${tool}")
-            ln -sf "${which_tool}" "${PREBUILTS_DIR}/build-tools/path/linux-x86/${tool}"
-            ln -sf "${which_tool}" "${PREBUILTS_DIR}/build-tools/linux-x86/bin/${tool}"
-            ln -sf "${which_tool}" "${BUILD_TOOLS_PATH}/${tool}"
-          done
-
-          # Setup kernel-build-tools if missing
-          mkdir -p "${PREBUILTS_DIR}/kernel-build-tools/linux-x86/bin"
-          AVBTOOL_LOCAL="${GITHUB_WORKSPACE}/kernel_platform/external/avb/avbtool.py"
-          if [ ! -f "${AVBTOOL_LOCAL}" ]; then
-            mkdir -p "$(dirname "${AVBTOOL_LOCAL}")"
-            curl -sSL "https://android.googlesource.com/platform/external/avb/+/refs/heads/main/avbtool.py?format=TEXT" | base64 -d > "${AVBTOOL_LOCAL}"
-          fi
-          chmod +x "${AVBTOOL_LOCAL}"
-          sudo ln -sf "${AVBTOOL_LOCAL}" /usr/local/bin/avbtool
-          sudo ln -sf "${AVBTOOL_LOCAL}" /usr/bin/avbtool
-          ln -sf "${AVBTOOL_LOCAL}" "${PREBUILTS_DIR}/kernel-build-tools/linux-x86/bin/avbtool"
-          ln -sf "${AVBTOOL_LOCAL}" "${BUILD_TOOLS_PATH}/avbtool"
-          ln -sf "${AVBTOOL_LOCAL}" "${PREBUILTS_DIR}/build-tools/path/linux-x86/avbtool"
-          ln -sf "${AVBTOOL_LOCAL}" "${PREBUILTS_DIR}/build-tools/linux-x86/bin/avbtool"
-          echo "==> Verifying avbtool:"
+          echo "==> Tooling verification:"
+          nproc
+          which nproc
           avbtool version
-          which_pahole=$(which pahole 2>/dev/null || echo "/usr/bin/pahole")
-          ln -sf "${which_pahole}" "${PREBUILTS_DIR}/kernel-build-tools/linux-x86/bin/pahole"
-          ln -sf "${which_pahole}" "${BUILD_TOOLS_PATH}/pahole"
-
-          printf '#!/bin/bash\nexit 0\n' > "${PREBUILTS_DIR}/kernel-build-tools/linux-x86/bin/certify_bootimg"
-          chmod +x "${PREBUILTS_DIR}/kernel-build-tools/linux-x86/bin/certify_bootimg"
-
-          printf '#!/bin/bash\nwhile [ $# -gt 0 ]; do\n  if [ "$1" = "-o" ]; then\n    mkdir -p "$(dirname "$2")" && touch "$2"\n    shift 2\n  else\n    shift\n  fi\ndone\nexit 0\n' > "${PREBUILTS_DIR}/kernel-build-tools/linux-x86/bin/soong_zip"
-          chmod +x "${PREBUILTS_DIR}/kernel-build-tools/linux-x86/bin/soong_zip"
-          ln -sf "${PREBUILTS_DIR}/kernel-build-tools/linux-x86/bin/soong_zip" "${BUILD_TOOLS_PATH}/soong_zip"
-
-          printf '#!/bin/bash\nexit 0\n' > "${PREBUILTS_DIR}/kernel-build-tools/linux-x86/bin/build_image"
-          chmod +x "${PREBUILTS_DIR}/kernel-build-tools/linux-x86/bin/build_image"
-          ln -sf "${PREBUILTS_DIR}/kernel-build-tools/linux-x86/bin/build_image" "${BUILD_TOOLS_PATH}/build_image"
+          mkdtboimg.py --help >/dev/null && echo "mkdtboimg.py OK"
 
       - name: Build Kernel
         run: |
@@ -260,6 +226,15 @@ jobs:
                 cp "${DIST_DIR}/${img}" "${OUTPUT_DIR}/official_${img}"
               fi
             done
+          fi
+
+          # Copy dtbo.img and create dtbo.tar for Odin if available
+          DIST_DIR="${GITHUB_WORKSPACE}/out/msm-kalama-kalama-gki/gki_kernel/dist"
+          if [ -f "${DIST_DIR}/dtbo.img" ]; then
+            echo "==> Packaging dtbo.img..."
+            cp "${DIST_DIR}/dtbo.img" "${OUTPUT_DIR}/dtbo.img"
+            lz4 -B6 --content-size -f "${OUTPUT_DIR}/dtbo.img" "${OUTPUT_DIR}/dtbo.img.lz4"
+            (cd "${OUTPUT_DIR}" && tar -cvf dtbo.tar dtbo.img.lz4 && rm -f dtbo.img.lz4)
           fi
 
           # Copy vendor_boot and modules if available

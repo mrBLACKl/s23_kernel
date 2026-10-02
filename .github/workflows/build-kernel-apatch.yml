@@ -1,0 +1,290 @@
+name: Build Samsung S23 Kernel (APatch Compatible - No BTI)
+
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: 'Build variant (user or userdebug)'
+        required: true
+        default: 'user'
+      spl_bypass:
+        description: 'Set Security Patch Level to 2099-12 (anti-rollback bypass)'
+        required: true
+        type: boolean
+        default: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Kernel & Package Boot (APatch Compatible)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout Kernel Source
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+          fetch-depth: 1
+
+      - name: Free Disk Space & Setup Swap
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          # Allocate 8GB swap for ThinLTO linking
+          if [ ! -f /swapfile ]; then
+            sudo fallocate -l 8G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=8192
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile
+            sudo swapon /swapfile
+          fi
+          free -h
+          df -h
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            bc \
+            bison \
+            build-essential \
+            ccache \
+            curl \
+            dwarves \
+            flex \
+            git \
+            gnupg \
+            libelf-dev \
+            libssl-dev \
+            lz4 \
+            python3 \
+            python-is-python3 \
+            rsync \
+            device-tree-compiler \
+            zip \
+            zlib1g-dev \
+            libncurses-dev
+
+      - name: Setup Java 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+
+      - name: Cache Clang Toolchain
+        id: cache-clang
+        uses: actions/cache@v4
+        with:
+          path: kernel_platform/prebuilts/clang/host/linux-x86/clang-r450784e
+          key: clang-r450784e-v1
+
+      - name: Setup Prebuilt Clang Toolchain (clang-r450784e)
+        if: steps.cache-clang.outputs.cache-hit != 'true'
+        run: |
+          PREBUILTS_DIR="${GITHUB_WORKSPACE}/kernel_platform/prebuilts"
+          CLANG_DIR="${PREBUILTS_DIR}/clang/host/linux-x86/clang-r450784e"
+
+          if [ ! -f "${CLANG_DIR}/bin/clang" ]; then
+            echo "==> Fetching Clang r450784e from Google AOSP..."
+            mkdir -p "${PREBUILTS_DIR}/clang/host/linux-x86"
+            git clone --depth 1 \
+              https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 \
+              -b master-kernel-build-2022 \
+              /tmp/aosp_clang
+            mv /tmp/aosp_clang/clang-r450784e "${PREBUILTS_DIR}/clang/host/linux-x86/"
+            rm -rf /tmp/aosp_clang
+          fi
+
+          echo "==> Clang compiler verification:"
+          "${CLANG_DIR}/bin/clang" --version
+
+      - name: Cache Android NDK
+        id: cache-ndk
+        uses: actions/cache@v4
+        with:
+          path: kernel_platform/prebuilts/ndk-r23
+          key: ndk-r23c-v1
+
+      - name: Setup Prebuilt Android NDK (ndk-r23)
+        if: steps.cache-ndk.outputs.cache-hit != 'true'
+        run: |
+          PREBUILTS_DIR="${GITHUB_WORKSPACE}/kernel_platform/prebuilts"
+          mkdir -p "${PREBUILTS_DIR}"
+
+          if [ ! -d "${PREBUILTS_DIR}/ndk-r23" ]; then
+            # Check if runner has an existing Android NDK
+            RUNNER_NDK=$(find /usr/local/lib/android/sdk/ndk/ -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -V | tail -n 1 || true)
+            if [ -n "${RUNNER_NDK}" ] && [ -d "${RUNNER_NDK}/toolchains/llvm/prebuilt/linux-x86_64/sysroot" ]; then
+              echo "==> Using runner preinstalled NDK: ${RUNNER_NDK}"
+              ln -sf "${RUNNER_NDK}" "${PREBUILTS_DIR}/ndk-r23"
+            else
+              echo "==> Downloading official Android NDK r23c..."
+              curl -sSL -o /tmp/ndk.zip https://dl.google.com/android/repository/android-ndk-r23c-linux.zip
+              unzip -q /tmp/ndk.zip -d /tmp/ndk_tmp
+              mv /tmp/ndk_tmp/android-ndk-r23c "${PREBUILTS_DIR}/ndk-r23"
+              rm -rf /tmp/ndk.zip /tmp/ndk_tmp
+            fi
+          fi
+
+          echo "==> NDK verification:"
+          ls -la "${PREBUILTS_DIR}/ndk-r23/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+
+      - name: Setup Prebuilt Build Tools & Host Binaries
+        run: |
+          chmod +x "${GITHUB_WORKSPACE}/kernel_platform/build/auto_resolve_tools.py"
+          python3 "${GITHUB_WORKSPACE}/kernel_platform/build/auto_resolve_tools.py"
+
+          # System-wide links for critical build tools
+          sudo ln -sf "${GITHUB_WORKSPACE}/kernel_platform/tools/libufdt/utils/src/mkdtboimg.py" /usr/local/bin/mkdtboimg.py
+          sudo ln -sf "${GITHUB_WORKSPACE}/kernel_platform/tools/libufdt/utils/src/mkdtboimg.py" /usr/local/bin/mkdtboimg
+          sudo ln -sf "${GITHUB_WORKSPACE}/kernel_platform/tools/libufdt/utils/src/mkdtboimg.py" /usr/local/bin/mkdtimg
+          sudo ln -sf "${GITHUB_WORKSPACE}/kernel_platform/external/avb/avbtool.py" /usr/local/bin/avbtool
+          sudo ln -sf "${GITHUB_WORKSPACE}/kernel_platform/prebuilts/kernel-build-tools/linux-x86/bin/ufdt_apply_overlay" /usr/local/bin/ufdt_apply_overlay
+          sudo ln -sf "${GITHUB_WORKSPACE}/kernel_platform/prebuilts/kernel-build-tools/linux-x86/bin/build_image" /usr/local/bin/build_image
+          sudo ln -sf "${GITHUB_WORKSPACE}/kernel_platform/prebuilts/kernel-build-tools/linux-x86/bin/build_super_image" /usr/local/bin/build_super_image
+
+          echo "==> Tooling verification:"
+          nproc
+          which nproc
+          avbtool version
+          mkdtboimg.py --help >/dev/null && echo "mkdtboimg.py OK"
+
+      - name: Disable Kernel BTI for APatch / KernelPatch Compatibility
+        run: |
+          echo "=========================================================="
+          echo "==> Configuring Kernel for APatch / KernelPatch Compatibility"
+          echo "==> Disabling CONFIG_ARM64_BTI_KERNEL (Kernel Branch Target Identification)"
+          echo "=========================================================="
+
+          # 1. Update Kconfig definitions so ARM64_BTI_KERNEL defaults to n
+          sed -i '/config ARM64_BTI_KERNEL/,/help/ s/default y/default n/' kernel_platform/common/arch/arm64/Kconfig
+          sed -i '/config ARM64_BTI_KERNEL/,/help/ s/default y/default n/' kernel_platform/msm-kernel/arch/arm64/Kconfig
+
+          # 2. Add # CONFIG_ARM64_BTI_KERNEL is not set to all relevant defconfig files
+          for cfg in \
+            "${GITHUB_WORKSPACE}/kernel_platform/common/arch/arm64/configs/gki_defconfig" \
+            "${GITHUB_WORKSPACE}/kernel_platform/msm-kernel/arch/arm64/configs/gki_defconfig" \
+            "${GITHUB_WORKSPACE}/kernel_platform/msm-kernel/arch/arm64/configs/vendor/kalama-gki_defconfig" \
+            "${GITHUB_WORKSPACE}/kernel_platform/msm-kernel/arch/arm64/configs/vendor/kalama_sec_defconfig"; do
+            if [ -f "$cfg" ]; then
+              sed -i '/CONFIG_ARM64_BTI_KERNEL/d' "$cfg"
+              echo "# CONFIG_ARM64_BTI_KERNEL is not set" >> "$cfg"
+              echo "Updated defconfig: $cfg"
+            fi
+          done
+
+          echo "==> Verification of ARM64_BTI_KERNEL in defconfig:"
+          grep -Hn "ARM64_BTI_KERNEL" "${GITHUB_WORKSPACE}/kernel_platform/common/arch/arm64/configs/gki_defconfig" || true
+
+      - name: Build Kernel
+        run: |
+          # Convert any Windows CRLF to Unix LF without modifying symlinks
+          find . -type f ! -type l -name "*.sh" -exec sed -i 's/\r$//' {} + 2>/dev/null || true
+          chmod +x ./build_kernel_GKI.sh
+
+          export HERMETIC_TOOLCHAIN=0
+          export MAKEFLAGS="-j$(nproc)"
+          export BUILD_GKI_CERTIFICATION_TOOLS=0
+          export BUILD_SYSTEM_DLKM=0
+          export BUILD_VENDOR_DLKM=0
+          export BISON_PKGDATADIR=/usr/share/bison
+          export M4=/usr/bin/m4
+
+          echo "==> Build environment: $(nproc) vCPUs, $(free -h | awk '/Mem:/ {print $2}') RAM"
+          echo "==> Verifying nproc and host tools:"
+          nproc
+          which nproc
+          ${GITHUB_WORKSPACE}/kernel_platform/build/kernel/build-tools/path/linux-x86/nproc
+          echo "==> Verifying pahole (BTF generator):"
+          pahole --version || true
+          ${BUILD_TOOLS_PATH}/pahole --version || true
+
+          # Run build for Samsung Galaxy S23 (dm1q_eur_openx)
+          bash ./build_kernel_GKI.sh dm1q_eur_openx ${{ github.event.inputs.variant || 'user' }} kalama
+
+      - name: Package Boot Images & Odin Tar
+        run: |
+          OUTPUT_DIR="${GITHUB_WORKSPACE}/output_boot"
+          mkdir -p "${OUTPUT_DIR}"
+
+          KERNEL_IMG="${GITHUB_WORKSPACE}/device/qcom/gki-kernel/Image"
+          if [ ! -f "${KERNEL_IMG}" ]; then
+            KERNEL_IMG="${GITHUB_WORKSPACE}/out/msm-kalama-kalama-gki/dist/Image"
+          fi
+
+          echo "Using kernel: ${KERNEL_IMG}"
+          cp "${KERNEL_IMG}" "${OUTPUT_DIR}/Image"
+
+          # Determine security patch level (defaults to 2099-12 bypass unless explicitly disabled)
+          SPL="2026-09"
+          SPL_FULL="2026-09-05"
+          if [ "${{ github.event.inputs.spl_bypass }}" != "false" ]; then
+            SPL="2099-12"
+            SPL_FULL="2099-12-05"
+          fi
+
+          echo "==> Packaging boot.img (Header v4, SPL: ${SPL})..."
+          python3 "${GITHUB_WORKSPACE}/kernel_platform/tools/mkbootimg/mkbootimg.py" \
+            --header_version 4 \
+            --kernel "${KERNEL_IMG}" \
+            --pagesize 4096 \
+            --os_version 13.0.0 \
+            --os_patch_level "${SPL}" \
+            --output "${OUTPUT_DIR}/boot.img"
+
+          # Sign with AVB test key
+          TESTKEY="${GITHUB_WORKSPACE}/kernel_platform/tools/mkbootimg/gki/testdata/testkey_rsa4096.pem"
+          python3 "${GITHUB_WORKSPACE}/kernel_platform/external/avb/avbtool.py" add_hash_footer \
+            --image "${OUTPUT_DIR}/boot.img" \
+            --partition_name boot \
+            --partition_size 100663296 \
+            --key "${TESTKEY}" \
+            --algorithm SHA256_RSA4096
+
+          echo "==> Creating Odin flashable boot.tar (using lz4 -B6)..."
+          lz4 -B6 --content-size -f "${OUTPUT_DIR}/boot.img" "${OUTPUT_DIR}/boot.img.lz4"
+          (cd "${OUTPUT_DIR}" && tar -cvf boot.tar boot.img.lz4 && rm -f boot.img.lz4)
+
+          echo "==> Creating vbmeta_disabled.tar for Samsung AVB verification bypass..."
+          python3 "${GITHUB_WORKSPACE}/kernel_platform/external/avb/avbtool.py" make_vbmeta_image \
+            --flags 2 \
+            --output "${OUTPUT_DIR}/vbmeta.img"
+          lz4 -B6 --content-size -f "${OUTPUT_DIR}/vbmeta.img" "${OUTPUT_DIR}/vbmeta.img.lz4"
+          (cd "${OUTPUT_DIR}" && tar -cvf vbmeta_disabled.tar vbmeta.img.lz4 && rm -f vbmeta.img.lz4 vbmeta.img)
+
+          # Copy official GKI boot images generated by Samsung build.sh
+          DIST_DIR="${GITHUB_WORKSPACE}/out/msm-kalama-kalama-gki/gki_kernel/dist"
+          if [ -d "${DIST_DIR}" ]; then
+            for img in boot.img boot-gz.img boot-lz4.img boot-img.tar.gz System.map vmlinux vmlinux.symvers modules.builtin; do
+              if [ -f "${DIST_DIR}/${img}" ]; then
+                cp "${DIST_DIR}/${img}" "${OUTPUT_DIR}/official_${img}"
+              fi
+            done
+          fi
+
+          # Copy dtbo.img and create dtbo.tar for Odin if available
+          DIST_DIR="${GITHUB_WORKSPACE}/out/msm-kalama-kalama-gki/gki_kernel/dist"
+          if [ -f "${DIST_DIR}/dtbo.img" ]; then
+            echo "==> Packaging dtbo.img..."
+            cp "${DIST_DIR}/dtbo.img" "${OUTPUT_DIR}/dtbo.img"
+            lz4 -B6 --content-size -f "${OUTPUT_DIR}/dtbo.img" "${OUTPUT_DIR}/dtbo.img.lz4"
+            (cd "${OUTPUT_DIR}" && tar -cvf dtbo.tar dtbo.img.lz4 && rm -f dtbo.img.lz4)
+          fi
+
+          # Copy vendor_boot and modules if available
+          if [ -f "${GITHUB_WORKSPACE}/out/msm-kalama-kalama-gki/dist/vendor_boot.img" ]; then
+            cp "${GITHUB_WORKSPACE}/out/msm-kalama-kalama-gki/dist/vendor_boot.img" "${OUTPUT_DIR}/"
+          fi
+          if [ -f "${GITHUB_WORKSPACE}/out/msm-kalama-kalama-gki/dist/vendor_dlkm.img" ]; then
+            cp "${GITHUB_WORKSPACE}/out/msm-kalama-kalama-gki/dist/vendor_dlkm.img" "${OUTPUT_DIR}/"
+          fi
+
+          ls -lh "${OUTPUT_DIR}"
+
+      - name: Upload Boot & Kernel Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: S23-Kernel-Boot-APatch-${{ github.event.inputs.variant || 'user' }}
+          path: ${{ github.workspace }}/output_boot/*
+          if-no-files-found: error

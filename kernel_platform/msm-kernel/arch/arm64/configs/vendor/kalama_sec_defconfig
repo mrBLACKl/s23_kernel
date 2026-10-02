@@ -142,12 +142,3 @@ CONFIG_CRYPTO_TWOFISH=m
 
 # CONFIG_SEC_FACTORY_INTERPOSER is not set
 
-# Disable Samsung Knox Hypervisor and Security features for custom kernel booting
-# CONFIG_UH is not set
-# CONFIG_RKP is not set
-# CONFIG_KDP is not set
-# CONFIG_SECURITY_DEFEX is not set
-# CONFIG_FIVE is not set
-# CONFIG_PROCA is not set
-# CONFIG_INTEGRITY is not set
-# CONFIG_GAF is not set

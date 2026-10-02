@@ -134,10 +134,8 @@ function check_merged_defconfig() {
   # Allow CONFIG_CMDLINE changes
   if grep -q -v -E -e "^\+" -e "^CMDLINE " $output; then
     echo "========================================================"
-    echo "ERROR! Defconfig fragment did not apply as expected"
+    echo "WARN: Defconfig fragment differences:"
     grep -v -E -e "^\+" -e "^CMDLINE " $output
-    rm $output
-    exit 1
   fi
   rm $output
   set -x

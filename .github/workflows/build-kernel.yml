@@ -32,9 +32,17 @@ jobs:
           submodules: false
           fetch-depth: 1
 
-      - name: Free Disk Space
+      - name: Free Disk Space & Setup Swap
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          # Allocate 8GB swap for ThinLTO linking
+          if [ ! -f /swapfile ]; then
+            sudo fallocate -l 8G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=8192
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile
+            sudo swapon /swapfile
+          fi
+          free -h
           df -h
 
       - name: Install Build Dependencies
@@ -208,9 +216,7 @@ jobs:
             --partition_name boot \
             --partition_size 100663296 \
             --key "${TESTKEY}" \
-            --algorithm SHA256_RSA4096 \
-            --prop com.android.build.boot.os_version:13 \
-            --prop com.android.build.boot.security_patch:"${SPL_FULL}"
+            --algorithm SHA256_RSA4096
 
           echo "==> Creating Odin flashable boot.tar (using lz4 -B6)..."
           lz4 -B6 --content-size -f "${OUTPUT_DIR}/boot.img" "${OUTPUT_DIR}/boot.img.lz4"

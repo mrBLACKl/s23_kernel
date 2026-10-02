@@ -17,7 +17,7 @@ export TARGET_PRODUCT=gki
 export TARGET_BOARD_PLATFORM=gki
 
 export HERMETIC_TOOLCHAIN=0
-export LTO=none
+export LTO=thin
 export GKI_KMI_SYMBOL_LIST_STRICT_MODE=0
 export GKI_TRIM_NONLISTED_KMI=0
 export MAKEFLAGS="-j$(nproc)"
